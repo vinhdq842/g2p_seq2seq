@@ -16,8 +16,8 @@ for sentence in sentences:
     res = ''
     a = time()
     for word in sentence.lower().split():
-        res += model.decode_word(word) + ' ._. '
-    print(res)
+        res += ' ⎵ ' + model.decode_word(word)
+    print(res[3:])
     times.append(time() - a)
 
 print(numpy.mean(times))

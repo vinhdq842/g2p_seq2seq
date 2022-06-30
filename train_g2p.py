@@ -51,10 +51,12 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
         with torch.no_grad():
             for src, trg in val_dataloader:
                 src, trg = src.to(device), trg.to(device)
+
                 output, _ = model(src, trg[:, :-1])
                 output_dim = output.shape[-1]
                 output = output.contiguous().view(-1, output_dim)
                 trg = trg[:, 1:].contiguous().view(-1)
+
                 val_loss += [criterion(output, trg).item()]
                 val_acc += (output.argmax(1) == trg).tolist()
 
@@ -94,13 +96,11 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
 
             for i in range(1, max_len):
                 trg_tensor = torch.LongTensor(pred[:, :i]).to(device)
-                print(trg_tensor.shape)
                 output, attention = model.decoder(trg_tensor, encoder_conved, encoder_combined)
                 pred[:, i] = output.argmax(2)[:, -1]
 
             for i in range(src.shape[0]):
                 org = ' '.join([rev_output_vocab[o.item()] for o in trg[i, :] if o.item() > 2])
-
                 pred1 = []
                 for tk in pred[i, 1:]:
                     if tk < 2:
@@ -119,9 +119,9 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_file', type=str, default='train.dict')
-    parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--dev_file', type=str, default='dev.dict')
     parser.add_argument('--test_file', type=str, default='test.dict')
+    parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--embedding_dim', type=int, default=300)
     parser.add_argument('--hidden_size', type=int, default=256)
     parser.add_argument('--num_encoder_layers', type=int, default=2)

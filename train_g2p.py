@@ -10,7 +10,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
 from g2p_seq2seq.cnn.G2PCNN import G2PCNN
+from g2p_seq2seq.gru.G2PGRU import G2PGRU
 from g2p_seq2seq.utils import encode, stat
+
+model_file_name = 'g2p_seq2seq_cnn10.pth'
 
 
 def count_parameters(model):
@@ -20,7 +23,7 @@ def count_parameters(model):
 def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs, device, patient):
     model.to(device)
     criterion.to(device)
-    best_val_loss = 100000
+    best_val_loss = 25052001
     current_patient = 0
     for epoch in range(epochs):
         model.train()
@@ -28,11 +31,15 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
         train_acc = []
         for src, trg in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}'):
             src, trg = src.to(device), trg.to(device)
-            output, _ = model(src, trg[:, :-1])
 
-            output_dim = output.shape[-1]
-            output = output.contiguous().view(-1, output_dim)
-            trg = trg[:, 1:].contiguous().view(-1)
+            # output, _ = model(src, trg[:, :-1])
+            # output_dim = output.shape[-1]
+            # output = output.contiguous().view(-1, output_dim)
+            # trg = trg[:, 1:].contiguous().view(-1)
+            src, trg = src.permute(1, 0), trg.permute(1, 0)
+            output = model(src, trg)
+            output = output[1:].contiguous().view(-1, output.shape[-1])
+            trg = trg[1:].contiguous().view(-1)
 
             loss = criterion(output, trg)
             optimizer.zero_grad()
@@ -52,10 +59,14 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
             for src, trg in val_dataloader:
                 src, trg = src.to(device), trg.to(device)
 
-                output, _ = model(src, trg[:, :-1])
-                output_dim = output.shape[-1]
-                output = output.contiguous().view(-1, output_dim)
-                trg = trg[:, 1:].contiguous().view(-1)
+                # output, _ = model(src, trg[:, :-1])
+                # output_dim = output.shape[-1]
+                # output = output.contiguous().view(-1, output_dim)
+                # trg = trg[:, 1:].contiguous().view(-1)
+                src, trg = src.permute(1, 0), trg.permute(1, 0)
+                output = model(src, trg, 1)
+                output = output[1:].contiguous().view(-1, output.shape[-1])
+                trg = trg[1:].contiguous().view(-1)
 
                 val_loss += [criterion(output, trg).item()]
                 val_acc += (output.argmax(1) == trg).tolist()
@@ -69,13 +80,13 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
 
         if best_val_loss > val_loss:
             current_patient = 0
-            torch.save(model.state_dict(), 'checkpoint/g2p_seq2seq.pth')
+            torch.save(model.state_dict(), f'checkpoint/{model_file_name}')
             best_val_loss = val_loss
             print('Checkpoint saved successfully!')
         else:
             current_patient += 1
             if current_patient == patient:
-                print(f'Stop training since not improved in the last {patient} epochs...')
+                print(f'Stop training since Val loss not improved in the last {patient} epochs...')
                 return
 
 
@@ -85,32 +96,17 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
     acc = []
     infer = []
     ground = []
-    max_len = 25
+
     with torch.no_grad():
         for src, trg in test_dataloader:
             src, trg = src.to(device), trg.to(device)
-            encoder_conved, encoder_combined = model.encoder(src)
 
-            pred = torch.zeros((src.shape[0], max_len), dtype=torch.int64)
-            pred[:, 0] = torch.ones(src.shape[0])
+            pred = model.infer(src)
+            org = [' '.join([rev_output_vocab[o.item()] for o in trg[i, :] if o.item() > 2]) for i in range(len(trg))]
 
-            for i in range(1, max_len):
-                trg_tensor = torch.LongTensor(pred[:, :i]).to(device)
-                output, attention = model.decoder(trg_tensor, encoder_conved, encoder_combined)
-                pred[:, i] = output.argmax(2)[:, -1]
-
-            for i in range(src.shape[0]):
-                org = ' '.join([rev_output_vocab[o.item()] for o in trg[i, :] if o.item() > 2])
-                pred1 = []
-                for tk in pred[i, 1:]:
-                    if tk < 2:
-                        break
-                    pred1.append(rev_output_vocab[tk.item()])
-
-                pred1 = ' '.join(pred1)
-                infer.append(pred1)
-                ground.append(org)
-                acc.append(org == pred1)
+            infer += pred
+            ground += org
+            acc += [o == p for o, p in zip(org, pred)]
 
         print(f'Accuracy: {np.mean(acc):.2f}')
         print(f'WER: {wer(ground, infer):.6f}')
@@ -124,8 +120,6 @@ def main():
     parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--embedding_dim', type=int, default=300)
     parser.add_argument('--hidden_size', type=int, default=256)
-    parser.add_argument('--num_encoder_layers', type=int, default=2)
-    parser.add_argument('--num_decoder_layers', type=int, default=2)
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--early_stopping_patient', type=int, default=3)
     parser.add_argument('--lr', type=float, default=0.002)
@@ -151,12 +145,13 @@ def main():
     trg_val = encode(trg_val, output_vocab, args.max_seq_length, True)
     val_dataloader = DataLoader(TensorDataset(src_val, trg_val), batch_size=args.batch_size)
 
-    g2p_model = G2PCNN(input_vocab, output_vocab, args.embedding_dim, args.hidden_size, args.num_encoder_layers,
-                       args.num_decoder_layers, 3, 3, 0.25)
+    g2p_model = G2PCNN(input_vocab, output_vocab)
 
     print(f'The model has {count_parameters(g2p_model):,} trainable parameters')
+
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     if args.model_path is not None:
-        g2p_model.load_state_dict(torch.load(f'{args.model_path}/g2p_seq2seq.pth', map_location='cpu'))
+        g2p_model.load_state_dict(torch.load(f'{args.model_path}/{model_file_name}', map_location=device))
         print("Checkpoint loaded...")
 
     path = "checkpoint/vocab.inp"
@@ -166,7 +161,6 @@ def main():
 
     optimizer = torch.optim.Adam(g2p_model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     train(g2p_model, train_dataloader, val_dataloader, optimizer, criterion, args.epochs, device,
           args.early_stopping_patient)
@@ -174,11 +168,11 @@ def main():
     if args.test_file is not None:
         test_data = open(args.test_file).read().strip().split('\n')
         src_test, trg_test, _, _ = stat(test_data)
-        src_test = encode(src_test, g2p_model.input_vocab, args.max_seq_length)
-        trg_test = encode(trg_test, g2p_model.output_vocab, args.max_seq_length, True)
+        src_test = encode(src_test, input_vocab, args.max_seq_length)
+        trg_test = encode(trg_test, output_vocab, args.max_seq_length, True)
         test_dataloader = DataLoader(TensorDataset(src_test, trg_test), batch_size=args.batch_size)
 
-        g2p_model.load_state_dict(torch.load(f'checkpoint/g2p_seq2seq.pth', map_location='cpu'))
+        g2p_model.load_state_dict(torch.load(f'checkpoint/{model_file_name}', map_location='cpu'))
         print('Best model loaded...')
         evaluate(g2p_model, test_dataloader, device, dict((v, k) for k, v in g2p_model.output_vocab.items()))
 

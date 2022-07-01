@@ -1,4 +1,3 @@
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 import torch
 
 
@@ -6,13 +5,11 @@ def encode(arr, vocab, maxlen=25, trg=False):
     res = []
     for row in arr:
         res.append([vocab[i] for i in row])
+        res[-1] += [vocab['<pad>']] * (maxlen - len(res[-1]) - (2 if trg else 0))
+        if trg:
+            res[-1] = [vocab['<sos>']] + res[-1] + [vocab['<eos>']]
 
-    res = torch.from_numpy(pad_sequences(res, padding='post', value=vocab['<pad>'], maxlen=maxlen)).to(torch.int64)
-    return torch.hstack(
-        (vocab['<sos>'] * torch.ones((res.shape[0], 1), dtype=torch.int64),
-         res,
-         vocab['<eos>'] * torch.ones((res.shape[0], 1), dtype=torch.int64))
-    ) if trg else res
+    return torch.LongTensor(res)
 
 
 def stat(content):

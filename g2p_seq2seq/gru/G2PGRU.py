@@ -52,11 +52,11 @@ class Decoder(nn.Module):
     def forward(self, input, hidden, encoder_outputs):
         x = input.unsqueeze(0)
         embed = self.dropout(self.embeddings(x))
-        a = self.attention(hidden, encoder_outputs)
+        a = self.attention(hidden, encoder_outputs).unsqueeze(1)
         encoder_outputs = encoder_outputs.permute(1, 0, 2)
+
         weighted = torch.bmm(a, encoder_outputs)
         weighted = weighted.permute(1, 0, 2)
-
         gru_input = torch.cat((embed, weighted), dim=2)
         output, hidden = self.gru(gru_input, hidden.unsqueeze(0))
         assert (output == hidden).all()
@@ -106,17 +106,29 @@ class G2PGRU(nn.Module):
         return outputs
 
     def infer(self, src):
-        encoder_outputs, hidden = self.encoder(src)
-        input = torch.tensor([self.output_vocab['<sos>']])
+        max_len = 25
         res = []
-        rev_output_dict = dict((v, k) for k, v in self.output_vocab.items())
+        batch_size = src.shape[0]
+        preds = torch.zeros((batch_size, max_len), dtype=torch.int64).to(src.device)
+        preds[:, 0] = torch.ones(batch_size).to(src.device)
+        rev_output_vocab = dict((v, k) for k, v in self.output_vocab.items())
 
-        while True:
+        src = src.permute(1, 0)
+        encoder_outputs, hidden = self.encoder(src)
+        input = torch.tensor([self.output_vocab['<sos>']] * batch_size).to(src.device)
+
+        for i in range(1, max_len):
             logits, hidden = self.decoder(input, hidden, encoder_outputs)
             input = logits.argmax(-1)
-            if input.item() == self.output_vocab['<pad>']:
-                break
-            token = rev_output_dict[input.item()]
-            res.append(token)
+            preds[:, i] = input
 
-        return ' '.join(res)
+        for i in range(batch_size):
+            pred = []
+            for tkn in preds[i, 1:]:
+                if tkn < 3:
+                    break
+                pred.append(rev_output_vocab[tkn.item()])
+
+            res.append(' '.join(pred))
+
+        return res

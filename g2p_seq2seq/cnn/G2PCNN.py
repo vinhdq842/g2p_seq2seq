@@ -152,21 +152,25 @@ class G2PCNN(nn.Module):
         return output, attention
 
     def infer(self, src):
-        encoder_conved, encoder_combined = self.encoder(src)
         max_len = 25
-        pred = torch.zeros((1, max_len), dtype=torch.int64)
-        pred[:, 0] = 1
-        rev_output_dict = dict((v, k) for k, v in self.output_vocab.items())
-
-        for i in range(1, max_len):
-            trg_tensor = torch.LongTensor(pred[:, :i]).to(src.device)
-            output, _ = self.decoder(trg_tensor, encoder_conved, encoder_combined)
-            pred[0, i] = output.argmax(2)[:, -1].item()
-
         res = []
-        for tk in pred[0, 1:]:
-            if tk < 2:
-                break
-            res.append(rev_output_dict[tk.item()])
+        preds = torch.zeros((src.shape[0], max_len), dtype=torch.int64)
+        preds[:, 0] = torch.tensor([self.output_vocab['<sos>']] * src.shape[0])
+        rev_output_vocab = dict((v, k) for k, v in self.output_vocab.items())
 
-        return ' '.join(res)
+        encoder_conved, encoder_combined = self.encoder(src)
+        for i in range(1, max_len):
+            trg_tensor = torch.LongTensor(preds[:, :i]).to(src.device)
+            output, _ = self.decoder(trg_tensor, encoder_conved, encoder_combined)
+            preds[:, i] = output.argmax(2)[:, -1]
+
+        for i in range(src.shape[0]):
+            pred = []
+            for tkn in preds[i, 1:]:
+                if tkn < 3:
+                    break
+                pred.append(rev_output_vocab[tkn.item()])
+
+            res.append(' '.join(pred))
+
+        return res

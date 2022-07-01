@@ -14,7 +14,7 @@ if __name__ == '__main__':
     model = G2PPyTorch()
     model.load_model(args.model_path)
 
-    words = open(args.word_list, 'r').read().strip().split('\n')
-    res = [word + '\t' + model.decode_word(word) for word in tqdm(words)]
+    words = open(args.word_list, 'r').read().strip().split('\n')[:10]
+    res = [word + '\t' + model.decode_word([word])[0] for word in tqdm(words)]
     open('result.dict', 'w').write('\n'.join(res))
     print('Result successfully saved to result.dict...')

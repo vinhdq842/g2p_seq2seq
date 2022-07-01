@@ -40,7 +40,8 @@ class G2PLSTM(nn.Module):
                  output_vocab=None,
                  embedding_dim=300,
                  hidden_size=256,
-                 num_layers=2, dropout=0.5):
+                 num_layers=2,
+                 dropout=0.5):
         super(G2PLSTM, self).__init__()
 
         self.input_vocab = input_vocab
@@ -49,8 +50,7 @@ class G2PLSTM(nn.Module):
         self.decoder = Decoder(len(output_vocab), embedding_dim, hidden_size, num_layers, dropout)
 
     def forward(self, src, trg, teacher_forcing_ratio=0.5):
-        batch_size = trg.shape[1]
-        trg_len = trg.shape[0]
+        trg_len, batch_size = trg.shape
         trg_vocab_size = self.decoder.num_embeddings
 
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(src.device)
@@ -70,17 +70,29 @@ class G2PLSTM(nn.Module):
         return outputs
 
     def infer(self, src):
-        hidden, cell = self.encoder(src)
-        input = torch.tensor([self.output_vocab['<sos>']])
+        max_len = 25
         res = []
-        rev_output_dict = dict((v, k) for k, v in self.output_vocab.items())
+        batch_size = src.shape[0]
+        preds = torch.zeros((batch_size, max_len), dtype=torch.int64).to(src.device)
+        preds[:, 0] = torch.ones(batch_size).to(src.device)
+        rev_output_vocab = dict((v, k) for k, v in self.output_vocab.items())
 
-        while True:
+        src = src.permute(1, 0)
+        hidden, cell = self.encoder(src)
+        input = torch.tensor([self.output_vocab['<sos>']] * batch_size).to(src.device)
+
+        for i in range(1, max_len):
             logits, hidden, cell = self.decoder(input, hidden, cell)
             input = logits.argmax(-1)
-            if input.item() == self.output_vocab['<pad>']:
-                break
-            token = rev_output_dict[input.item()]
-            res.append(token)
+            preds[:, i] = input
 
-        return ' '.join(res)
+        for i in range(batch_size):
+            pred = []
+            for tkn in preds[i, 1:]:
+                if tkn < 3:
+                    break
+                pred.append(rev_output_vocab[tkn.item()])
+
+            res.append(' '.join(pred))
+
+        return res

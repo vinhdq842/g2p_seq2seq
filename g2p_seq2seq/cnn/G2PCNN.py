@@ -2,6 +2,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from g2p_seq2seq.utils import Beam
+
 
 class Encoder(nn.Module):
     def __init__(self, num_embeddings, embedding_dim, hidden_size, num_layers, kernel_size, dropout, max_length=100):
@@ -171,6 +173,41 @@ class G2PCNN(nn.Module):
                     break
                 pred.append(rev_output_vocab[tkn.item()])
 
+            res.append(' '.join(pred))
+
+        return res
+
+    def infer_beam(self, beam_width, src_batch):
+        max_len = 25
+        rev_output_vocab = dict((v, k) for k, v in self.output_vocab.items())
+        res = []
+
+        for src in src_batch:
+            beam = Beam(size=beam_width, pad=self.output_vocab['<pad>'], bos=self.output_vocab['<sos>'],
+                        eos=self.output_vocab['<eos>'], cuda=src.is_cuda)
+
+            preds = torch.zeros((beam_width, max_len), dtype=torch.int64)
+            preds[:, 0] = beam.get_current_state()
+            src = src.unsqueeze(0)
+            encoder_conved, encoder_combined = self.encoder(src)
+
+            for i in range(1, max_len):
+                trg_tensor = torch.LongTensor(preds[:, :i]).to(src.device)
+                output, _ = self.decoder(trg_tensor, encoder_conved, encoder_combined)
+
+                if beam.advance(torch.log_softmax(output[:, -1, :], -1)):
+                    break
+
+                preds[:, :i] = preds[beam.get_current_origin(), :i]
+                preds[:, i] = beam.get_current_state()
+
+            preds = torch.LongTensor(beam.get_hyp(0))
+
+            pred = []
+            for tkn in preds:
+                if tkn < 3:
+                    break
+                pred.append(rev_output_vocab[tkn.item()])
             res.append(' '.join(pred))
 
         return res

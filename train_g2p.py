@@ -11,9 +11,8 @@ from tqdm import tqdm
 
 from g2p_seq2seq.cnn.G2PCNN import G2PCNN
 from g2p_seq2seq.gru.G2PGRU import G2PGRU
-from g2p_seq2seq.utils import encode, stat
-
-model_file_name = 'g2p_seq2seq_cnn10.pth'
+from g2p_seq2seq.lstm.G2PLSTM import G2PLSTM
+from g2p_seq2seq.utils import encode, stat, MODEL_FILE_NAME
 
 
 def count_parameters(model):
@@ -23,7 +22,7 @@ def count_parameters(model):
 def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs, device, patient):
     model.to(device)
     criterion.to(device)
-    best_val_loss = 25052001
+    best_val_loss = 25042001
     current_patient = 0
     for epoch in range(epochs):
         model.train()
@@ -32,10 +31,10 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
         for src, trg in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}'):
             src, trg = src.to(device), trg.to(device)
 
-            # output, _ = model(src, trg[:, :-1])
-            # output_dim = output.shape[-1]
-            # output = output.contiguous().view(-1, output_dim)
-            # trg = trg[:, 1:].contiguous().view(-1)
+            #output, _ = model(src, trg[:, :-1])
+            #output_dim = output.shape[-1]
+            #output = output.contiguous().view(-1, output_dim)
+            #trg = trg[:, 1:].contiguous().view(-1)
             src, trg = src.permute(1, 0), trg.permute(1, 0)
             output = model(src, trg)
             output = output[1:].contiguous().view(-1, output.shape[-1])
@@ -59,10 +58,10 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
             for src, trg in val_dataloader:
                 src, trg = src.to(device), trg.to(device)
 
-                # output, _ = model(src, trg[:, :-1])
-                # output_dim = output.shape[-1]
-                # output = output.contiguous().view(-1, output_dim)
-                # trg = trg[:, 1:].contiguous().view(-1)
+                #output, _ = model(src, trg[:, :-1])
+                #output_dim = output.shape[-1]
+                #output = output.contiguous().view(-1, output_dim)
+                #trg = trg[:, 1:].contiguous().view(-1)
                 src, trg = src.permute(1, 0), trg.permute(1, 0)
                 output = model(src, trg, 1)
                 output = output[1:].contiguous().view(-1, output.shape[-1])
@@ -75,12 +74,12 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
         val_acc = np.mean(val_acc)
 
         print(
-            f'Training loss: {train_loss:.5f} | Training acc: {train_acc:.2f} | Val loss: {val_loss:.5f} | Val acc: {val_acc:.2f}'
+            f'Training loss: {train_loss:.5f} | Training acc: {train_acc:.2f} | Val loss: {val_loss:.5f} | Val acc: {val_acc:.2f} '
         )
 
         if best_val_loss > val_loss:
             current_patient = 0
-            torch.save(model.state_dict(), f'checkpoint/{model_file_name}')
+            torch.save(model.state_dict(), f'checkpoint/{MODEL_FILE_NAME}')
             best_val_loss = val_loss
             print('Checkpoint saved successfully!')
         else:
@@ -101,7 +100,7 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
         for src, trg in test_dataloader:
             src, trg = src.to(device), trg.to(device)
 
-            pred = model.infer(src)
+            pred = model.infer_beam(10, src)
             org = [' '.join([rev_output_vocab[o.item()] for o in trg[i, :] if o.item() > 2]) for i in range(len(trg))]
 
             infer += pred
@@ -145,13 +144,13 @@ def main():
     trg_val = encode(trg_val, output_vocab, args.max_seq_length, True)
     val_dataloader = DataLoader(TensorDataset(src_val, trg_val), batch_size=args.batch_size)
 
-    g2p_model = G2PCNN(input_vocab, output_vocab)
+    g2p_model = G2PGRU(input_vocab, output_vocab)
 
     print(f'The model has {count_parameters(g2p_model):,} trainable parameters')
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     if args.model_path is not None:
-        g2p_model.load_state_dict(torch.load(f'{args.model_path}/{model_file_name}', map_location=device))
+        g2p_model.load_state_dict(torch.load(f'{args.model_path}/{MODEL_FILE_NAME}', map_location=device))
         print("Checkpoint loaded...")
 
     path = "checkpoint/vocab.inp"
@@ -172,7 +171,7 @@ def main():
         trg_test = encode(trg_test, output_vocab, args.max_seq_length, True)
         test_dataloader = DataLoader(TensorDataset(src_test, trg_test), batch_size=args.batch_size)
 
-        g2p_model.load_state_dict(torch.load(f'checkpoint/{model_file_name}', map_location='cpu'))
+        g2p_model.load_state_dict(torch.load(f'checkpoint/{MODEL_FILE_NAME}', map_location='cpu'))
         print('Best model loaded...')
         evaluate(g2p_model, test_dataloader, device, dict((v, k) for k, v in g2p_model.output_vocab.items()))
 

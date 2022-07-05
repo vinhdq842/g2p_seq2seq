@@ -3,6 +3,8 @@ import random
 import torch
 from torch import nn
 
+from g2p_seq2seq.utils import Beam
+
 
 class Attention(nn.Module):
     def __init__(self, enc_hidden_size, dec_hidden_size):
@@ -14,11 +16,8 @@ class Attention(nn.Module):
         src_len = encoder_outputs.shape[0]
 
         hidden = hidden.unsqueeze(1).repeat(1, src_len, 1)
-
         encoder_outputs = encoder_outputs.permute(1, 0, 2)
-
         energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim=2)))
-
         attention = self.v(energy).squeeze(2)
 
         return torch.softmax(attention, dim=1)
@@ -129,6 +128,38 @@ class G2PGRU(nn.Module):
                     break
                 pred.append(rev_output_vocab[tkn.item()])
 
+            res.append(' '.join(pred))
+
+        return res
+
+    def infer_beam(self, beam_width, src_batch):
+        max_len = 25
+        rev_output_vocab = dict((v, k) for k, v in self.output_vocab.items())
+        res = []
+
+        for src in src_batch:
+            src = src.unsqueeze(1).expand(-1, beam_width)
+            encoder_outputs, hidden = self.encoder(src)
+
+            beam = Beam(size=beam_width, pad=self.output_vocab['<pad>'], bos=self.output_vocab['<sos>'],
+                        eos=self.output_vocab['<eos>'], cuda=src.is_cuda)
+
+            for i in range(max_len):
+                input = beam.get_current_state()
+
+                logits, hidden = self.decoder(input, hidden, encoder_outputs)
+                # k x vocab_size | batch x hid_dim
+                if beam.advance(torch.log_softmax(logits, -1)):
+                    break
+
+                hidden = hidden[beam.get_current_origin(), :]
+
+            preds = torch.LongTensor(beam.get_hyp(0))
+            pred = []
+            for tkn in preds:
+                if tkn < 3:
+                    break
+                pred.append(rev_output_vocab[tkn.item()])
             res.append(' '.join(pred))
 
         return res

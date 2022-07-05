@@ -2,6 +2,8 @@ import torch
 from torch import nn
 import random
 
+from g2p_seq2seq.utils import Beam
+
 
 class Encoder(nn.Module):
     def __init__(self, num_embeddings, embedding_dim, hidden_size, num_layers, dropout):
@@ -40,7 +42,7 @@ class G2PLSTM(nn.Module):
                  output_vocab=None,
                  embedding_dim=300,
                  hidden_size=256,
-                 num_layers=2,
+                 num_layers=3,
                  dropout=0.5):
         super(G2PLSTM, self).__init__()
 
@@ -93,6 +95,39 @@ class G2PLSTM(nn.Module):
                     break
                 pred.append(rev_output_vocab[tkn.item()])
 
+            res.append(' '.join(pred))
+
+        return res
+
+    def infer_beam(self, beam_width, src_batch):
+        max_len = 25
+        rev_output_vocab = dict((v, k) for k, v in self.output_vocab.items())
+        res = []
+
+        for src in src_batch:
+            src = src.unsqueeze(1).expand(-1, beam_width)
+            hidden, cell = self.encoder(src)
+
+            beam = Beam(size=beam_width, pad=self.output_vocab['<pad>'], bos=self.output_vocab['<sos>'],
+                        eos=self.output_vocab['<eos>'], cuda=src.is_cuda)
+
+            for i in range(max_len):
+                input = beam.get_current_state()
+
+                logits, hidden, cell = self.decoder(input, hidden, cell)
+                # k x vocab_size | n_layers * n_direction x batch x hid_dim
+                if beam.advance(torch.log_softmax(logits, -1)):
+                    break
+
+                hidden = hidden[:, beam.get_current_origin(), :]
+                cell = cell[:, beam.get_current_origin(), :]
+
+            preds = torch.LongTensor(beam.get_hyp(0))
+            pred = []
+            for tkn in preds:
+                if tkn < 3:
+                    break
+                pred.append(rev_output_vocab[tkn.item()])
             res.append(' '.join(pred))
 
         return res

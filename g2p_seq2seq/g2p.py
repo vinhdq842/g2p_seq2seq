@@ -15,7 +15,7 @@ class G2PPyTorch:
     def load_model(self, path_to_model):
         input_vocab = pickle.load(open(f'{path_to_model}/vocab.inp', 'rb'))
         output_vocab = pickle.load(open(f'{path_to_model}/vocab.out', 'rb'))
-        self.model = G2PCNN(input_vocab, output_vocab)
+        self.model = G2PGRU(input_vocab, output_vocab)
         self.model.load_state_dict(torch.load(f'{path_to_model}/{MODEL_FILE_NAME}', map_location=torch.device('cpu')))
         self.model.to(device=torch.device('cpu'))
         self.model.eval()

@@ -31,10 +31,10 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
         for src, trg in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}'):
             src, trg = src.to(device), trg.to(device)
 
-            #output, _ = model(src, trg[:, :-1])
-            #output_dim = output.shape[-1]
-            #output = output.contiguous().view(-1, output_dim)
-            #trg = trg[:, 1:].contiguous().view(-1)
+            # output, _ = model(src, trg[:, :-1])
+            # output_dim = output.shape[-1]
+            # output = output.contiguous().view(-1, output_dim)
+            # trg = trg[:, 1:].contiguous().view(-1)
             src, trg = src.permute(1, 0), trg.permute(1, 0)
             output = model(src, trg)
             output = output[1:].contiguous().view(-1, output.shape[-1])
@@ -58,10 +58,10 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
             for src, trg in val_dataloader:
                 src, trg = src.to(device), trg.to(device)
 
-                #output, _ = model(src, trg[:, :-1])
-                #output_dim = output.shape[-1]
-                #output = output.contiguous().view(-1, output_dim)
-                #trg = trg[:, 1:].contiguous().view(-1)
+                # output, _ = model(src, trg[:, :-1])
+                # output_dim = output.shape[-1]
+                # output = output.contiguous().view(-1, output_dim)
+                # trg = trg[:, 1:].contiguous().view(-1)
                 src, trg = src.permute(1, 0), trg.permute(1, 0)
                 output = model(src, trg, 1)
                 output = output[1:].contiguous().view(-1, output.shape[-1])
@@ -100,7 +100,7 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
         for src, trg in test_dataloader:
             src, trg = src.to(device), trg.to(device)
 
-            pred = model.infer_beam(10, src)
+            pred = model.infer_beam(3, src)
             org = [' '.join([rev_output_vocab[o.item()] for o in trg[i, :] if o.item() > 2]) for i in range(len(trg))]
 
             infer += pred

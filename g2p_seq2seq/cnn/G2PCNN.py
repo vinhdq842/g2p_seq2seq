@@ -1,6 +1,6 @@
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 from g2p_seq2seq.utils import Beam
 
@@ -134,8 +134,8 @@ class G2PCNN(nn.Module):
                  output_vocab=None,
                  embedding_dim=300,
                  hidden_size=256,
-                 num_encoder_layers=10,
-                 num_decoder_layers=10,
+                 num_encoder_layers=4,
+                 num_decoder_layers=4,
                  encoder_kernel_size=3,
                  decoder_kernel_size=3,
                  dropout=0.25):

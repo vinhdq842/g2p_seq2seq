@@ -1,6 +1,7 @@
 import argparse
 import os
 import pickle
+import time
 
 import numpy as np
 import torch
@@ -97,6 +98,7 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
     ground = []
 
     with torch.no_grad():
+        a = time.time()
         for src, trg in test_dataloader:
             src, trg = src.to(device), trg.to(device)
 
@@ -106,7 +108,7 @@ def evaluate(model, test_dataloader, device, rev_output_vocab):
             infer += pred
             ground += org
             acc += [o == p for o, p in zip(org, pred)]
-
+        print(f'Time: {time.time() - a:.2f}s')
         print(f'Accuracy: {np.mean(acc):.2f}')
         print(f'WER: {wer(ground, infer):.6f}')
 
@@ -118,13 +120,16 @@ def main():
     parser.add_argument('--test_file', type=str, default='test.dict')
     parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--embedding_dim', type=int, default=300)
-    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--encoder_hidden_size', type=int, default=256)
+    parser.add_argument('--decoder_hidden_size', type=int, default=256)
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--early_stopping_patient', type=int, default=3)
     parser.add_argument('--lr', type=float, default=0.002)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--max_seq_length', type=int, default=25)
-
+    parser.add_argument('--num_encoder_layers', type=int, default=3)
+    parser.add_argument('--num_decoder_layers', type=int, default=3)
+    parser.add_argument('--dropout', type=float, default=0.5)
     args = parser.parse_args()
 
     train_data = open(args.train_file).read().strip().split('\n')
@@ -171,7 +176,7 @@ def main():
         trg_test = encode(trg_test, output_vocab, args.max_seq_length, True)
         test_dataloader = DataLoader(TensorDataset(src_test, trg_test), batch_size=args.batch_size)
 
-        g2p_model.load_state_dict(torch.load(f'checkpoint/{MODEL_FILE_NAME}', map_location='cpu'))
+        g2p_model.load_state_dict(torch.load(f'checkpoint/{MODEL_FILE_NAME}', map_location=device))
         print('Best model loaded...')
         evaluate(g2p_model, test_dataloader, device, dict((v, k) for k, v in g2p_model.output_vocab.items()))
 

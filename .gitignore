@@ -1,0 +1,5 @@
+.env
+.idea
+g2p_seq2seq/cnn/__pycache__
+g2p_seq2seq/gru/__pycache__
+g2p_seq2seq/lstm/__pycache__

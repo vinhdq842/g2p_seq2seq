@@ -6,10 +6,10 @@ MODEL_FILE_NAME = 'g2p_seq2seq_gru.pth'
 def encode(arr, vocab, maxlen=25, trg=False):
     res = []
     for row in arr:
-        res.append([vocab[i] for i in row])
-        res[-1] += [vocab['<pad>']] * (maxlen - len(res[-1]) - (2 if trg else 0))
+        res.append([vocab[i] for i in row] + [vocab['<eos>']])
         if trg:
-            res[-1] = [vocab['<sos>']] + res[-1] + [vocab['<eos>']]
+            res[-1] = [vocab['<sos>']] + res[-1]
+        res[-1] += [vocab['<pad>']] * (maxlen - len(res[-1]) - (2 if trg else 1))
 
     return torch.LongTensor(res)
 

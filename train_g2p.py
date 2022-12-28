@@ -22,6 +22,8 @@ def count_parameters(model):
 
 def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs, device, patient):
     model.to(device)
+    in_vocab = model.input_vocab
+    out_vocab = model.output_vocab
     criterion.to(device)
     best_val_loss = 25042001
     current_patient = 0
@@ -47,7 +49,8 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
             optimizer.step()
 
             train_loss += [loss.item()]
-            train_acc += (output.argmax(1) == trg).tolist()
+            mask = trg != out_vocab['<pad>']
+            train_acc += (torch.where(mask,output.argmax(1),trg) == trg).tolist()
 
         train_loss = np.mean(train_loss)
         train_acc = np.mean(train_acc)
@@ -69,7 +72,8 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, epochs,
                 trg = trg[1:].contiguous().view(-1)
 
                 val_loss += [criterion(output, trg).item()]
-                val_acc += (output.argmax(1) == trg).tolist()
+                mask = trg != out_vocab['<pad>']
+                val_acc += (torch.where(mask,output.argmax(1),trg) == trg).tolist()
 
         val_loss = np.mean(val_loss)
         val_acc = np.mean(val_acc)
@@ -135,7 +139,7 @@ def main():
     train_data = open(args.train_file).read().strip().split('\n')
 
     src, trg, input_vocab, output_vocab = stat(train_data)
-    input_vocab = dict(zip(['<pad>'] + sorted(input_vocab), range(len(input_vocab) + 1)))
+    input_vocab = dict(zip(['<pad>', '<eos>'] + sorted(input_vocab), range(len(input_vocab) + 2)))
     output_vocab = dict(zip(['<pad>', '<sos>', '<eos>'] + sorted(output_vocab), range(len(output_vocab) + 3)))
 
     src = encode(src, input_vocab, args.max_seq_length)
@@ -164,7 +168,7 @@ def main():
     pickle.dump(output_vocab, open('checkpoint/vocab.out', 'wb'))
 
     optimizer = torch.optim.Adam(g2p_model.parameters(), lr=args.lr)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=output_vocab['<pad>'])
 
     train(g2p_model, train_dataloader, val_dataloader, optimizer, criterion, args.epochs, device,
           args.early_stopping_patient)
